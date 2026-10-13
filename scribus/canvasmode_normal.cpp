@@ -239,6 +239,15 @@ void CanvasMode_Normal::mouseDoubleClickEvent(QMouseEvent *m)
 			}
 			else if (fh == Canvas::SOUTH)
 				currItem->asTextFrame()->setTextFrameHeight();
+			else if (fh == Canvas::EAST || fh == Canvas::WEST)
+				currItem->asTextFrame()->setTextFrameWidth();
+			else if (fh == Canvas::SOUTHEAST || fh == Canvas::SOUTHWEST)
+			{
+				// width first: a narrower frame re-breaks the lines, and that is what
+				// decides the height that is fitted afterwards
+				currItem->asTextFrame()->setTextFrameWidth();
+				currItem->asTextFrame()->setTextFrameHeight();
+			}
 			//else if not in mode edit, set mode edit
 			else if (m_doc->appMode != modeEdit)
 			{

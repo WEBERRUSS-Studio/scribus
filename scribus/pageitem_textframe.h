@@ -203,11 +203,15 @@ protected:
 
 public:
 	void setTextFrameHeight();
+	void setTextFrameWidth();
 	/// Height the content would need: measures against a frame that is temporarily
 	/// tall enough so overflowing text is not cut out of the measurement.
 	/// lineBoxBottom fits the frame to the line boxes (baseline + font descent) of
 	/// the last line instead of to the ink of its glyphs.
 	double naturalContentHeight(bool lineBoxBottom = false);
+	/// Ink extents of the laid out text in frame coordinates, whitespace left at
+	/// the outer edge by the line break not counted. False if nothing is laid out.
+	bool contentInkX(double &left, double &right) const;
 };
 
 #endif
