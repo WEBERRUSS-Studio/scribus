@@ -203,7 +203,11 @@ protected:
 
 public:
 	void setTextFrameHeight();
-	double naturalContentHeight();
+	/// Height the content would need: measures against a frame that is temporarily
+	/// tall enough so overflowing text is not cut out of the measurement.
+	/// lineBoxBottom fits the frame to the line boxes (baseline + font descent) of
+	/// the last line instead of to the ink of its glyphs.
+	double naturalContentHeight(bool lineBoxBottom = false);
 };
 
 #endif
