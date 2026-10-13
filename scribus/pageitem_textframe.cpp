@@ -6220,6 +6220,118 @@ void PageItem_TextFrame::setTextFrameHeight()
 	m_Doc->changedPagePreview();
 }
 
+// A cluster that only carries whitespace: the line break pushes it to the outer
+// edge of a line, so it must not decide where the text ends.
+static bool isEdgeWhitespace(const Box *box)
+{
+	const GlyphBox *glyph = dynamic_cast<const GlyphBox*>(box);
+	return glyph != nullptr && glyph->glyphRun().isSpace();
+}
+
+bool PageItem_TextFrame::contentInkX(double &left, double &right) const
+{
+	if (textLayout.lines() <= 0)
+		return false;
+
+	bool anyLine = false;
+	for (const Box *column : textLayout.box()->boxes())
+	{
+		for (const Box *line : column->boxes())
+		{
+			// Glyph clusters are stored in visual order and repacked left to right
+			// by LineBox::update(), so this span is the ink of the line whichever
+			// way the paragraph reads.
+			const QList<const Box*> &glyphs = line->boxes();
+			double lineLeft  = column->x() + line->x();
+			double lineRight = lineLeft + line->naturalWidth();
+			int lo = 0, hi = glyphs.count() - 1;
+			while (lo <= hi && isEdgeWhitespace(glyphs.at(lo)))
+			{
+				lineLeft += glyphs.at(lo)->width();
+				++lo;
+			}
+			while (hi >= lo && isEdgeWhitespace(glyphs.at(hi)))
+			{
+				lineRight -= glyphs.at(hi)->width();
+				--hi;
+			}
+			if (!anyLine)
+			{
+				left  = lineLeft;
+				right = lineRight;
+				anyLine = true;
+			}
+			else
+			{
+				left  = qMin(left, lineLeft);
+				right = qMax(right, lineRight);
+			}
+		}
+	}
+	return anyLine;
+}
+
+void PageItem_TextFrame::setTextFrameWidth()
+{
+	if (textLayout.lines() <= 0)
+		return;
+
+	// The width of a chained frame drives the flow of the whole chain, and
+	// narrowing a multi column frame re-breaks every column: both are left alone.
+	if (m_nextBox != nullptr || m_backBox != nullptr || m_columns > 1)
+		return;
+
+	double inkLeft = 0.0, inkRight = 0.0;
+	if (!contentInkX(inkLeft, inkRight))
+		return;
+
+	const Box *column = textLayout.box()->boxes().first();
+	const double columnLeft  = column->x();
+	const double columnRight = column->x() + column->width();
+
+	// Which edge moves is the side the text runs towards: an LTR frame keeps its
+	// left edge and is trimmed on the right, an RTL frame keeps the edge its text
+	// starts at (its right edge) and is trimmed on the left. The column edges come
+	// from the laid out column box, so text distances and the frame stroke
+	// correction are carried over as the layout applied them.
+	const bool rtl = itemText.paragraphStyle(0).direction() == ParagraphStyle::RTL;
+	const double slack = rtl ? inkLeft - columnLeft : columnRight - inkRight;
+
+	// Lines are laid out inside their column, so fitting the width can only ever
+	// trim; ink that overhangs its column stays as it is.
+	double newWidth = m_width - qMax(slack, 0.0);
+	newWidth = qMax(newWidth, columnLeft + 1.0 + (m_width - columnRight)); // keep a text area
+	if (qFuzzyCompare(newWidth, m_width))
+		return;
+
+	UndoTransaction undoTransaction;
+	if (UndoManager::undoEnabled())
+	{
+		QString unitSuffix = unitGetStrFromIndex(m_Doc->unitIndex());
+		int unitPrecision  = unitGetPrecisionFromIndex(m_Doc->unitIndex());
+		double unitRatio   = m_Doc->unitRatio();
+		QString owString  = QString::number(oldWidth * unitRatio, 'f', unitPrecision) + " " + unitSuffix;
+		QString ohString  = QString::number(oldHeight * unitRatio, 'f', unitPrecision) + " " + unitSuffix;
+		QString nwString  = QString::number(newWidth * unitRatio, 'f', unitPrecision) + " " + unitSuffix;
+		QString nhString  = QString::number(m_height * unitRatio, 'f', unitPrecision) + " " + unitSuffix;
+		QString tooltip   = QString(Um::ResizeFromTo).arg(owString, ohString, nwString, nhString);
+		undoTransaction = undoManager->beginTransaction(Um::Selection, Um::ITextFrame, Um::Resize, tooltip, Um::IResize);
+	}
+
+	if (rtl)
+		setXPos(m_xPos + (m_width - newWidth)); // hold the edge the text starts at
+	setWidth(newWidth);
+	updateClip();
+
+	if (undoTransaction)
+		undoTransaction.commit();
+
+	invalid = true;
+	m_Doc->changed();
+	m_Doc->regionsChanged()->update(QRect());
+	m_Doc->changedPagePreview();
+}
+
 double PageItem_TextFrame::naturalContentHeight(bool lineBoxBottom)
 {
 	UndoBlocker undoBlocker;
