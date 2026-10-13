@@ -6185,7 +6185,12 @@ void PageItem_TextFrame::setTextFrameHeight()
 	// textLayout (see the goNoRoom path in layout()), so an overset frame would
 	// only ever be measured by the lines that already fitted and could only be
 	// shrunk further, never grown to its text.
-	double newHeight = naturalContentHeight();
+	// The frame bottom follows the same measure the first line offset uses at the
+	// top: the ink of the glyphs for the historical FLOPRealGlyphHeight, the line
+	// box (baseline + font descent) for the metric policies. Only the line box
+	// bottom is a height LineControl::isEndOfCol() can never reject for the last
+	// line, so the text cannot be pushed out of a frame that was just fitted to it.
+	double newHeight = naturalContentHeight(firstLineOffset() != FLOPRealGlyphHeight);
 	if (qFuzzyCompare(newHeight, m_height))   // no-op guard
 		return;
 
@@ -6215,7 +6220,7 @@ void PageItem_TextFrame::setTextFrameHeight()
 	m_Doc->changedPagePreview();
 }
 
-double PageItem_TextFrame::naturalContentHeight()
+double PageItem_TextFrame::naturalContentHeight(bool lineBoxBottom)
 {
 	UndoBlocker undoBlocker;
 	// Temporarily expand the frame, iterating if needed, until layout
@@ -6241,6 +6246,21 @@ double PageItem_TextFrame::naturalContentHeight()
 		}
 
 		naturalH = qMax(textLayout.box()->naturalHeight(), maxY);
+
+		// Bottom of the line boxes of the last line of every column (line positions
+		// are absolute within the frame, all column boxes sit at y 0). This is the
+		// measure LineControl::isEndOfCol() applies when it decides whether a line
+		// still fits, so fitting to it keeps the headroom test honest as well.
+		if (lineBoxBottom)
+		{
+			for (const Box *column : textLayout.box()->boxes())
+			{
+				if (column->boxCount() <= 0)
+					continue;
+				const Box *lastLine = column->boxes().constLast();
+				naturalH = qMax(naturalH, lastLine->y() + lastLine->height());
+			}
+		}
 
 		// If naturalH < tryHeight, layout had headroom; trust the answer.
 		if (naturalH < tryHeight - 0.5)
