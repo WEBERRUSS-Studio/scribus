@@ -6180,9 +6180,12 @@ void PageItem_TextFrame::setTextFrameHeight()
 	if (m_nextBox != nullptr) // Vertical alignment is not used inside a text chain
 		return;
 
-	textLayout.box()->moveTo(textLayout.box()->x(), 0);
-	double newHeight = textLayout.box()->naturalHeight();
-	newHeight += m_textDistanceMargins.bottom();
+	// Measure against a frame we know is tall enough. Reading the current layout
+	// directly cannot work: a line that does not fit is never appended to
+	// textLayout (see the goNoRoom path in layout()), so an overset frame would
+	// only ever be measured by the lines that already fitted and could only be
+	// shrunk further, never grown to its text.
+	double newHeight = naturalContentHeight();
 	if (qFuzzyCompare(newHeight, m_height))   // no-op guard
 		return;
 
@@ -6247,7 +6250,12 @@ double PageItem_TextFrame::naturalContentHeight()
 		tryHeight *= 2.0;
 	}
 
-	double height = textToFrameDistTop() + textToFrameDistBottom();
+	// Line y positions are absolute within the frame (they start at
+	// m_textDistanceMargins.top() + lineCorr), so the top text distance and the
+	// stroke correction are already part of naturalH/maxY. Only the bottom ones
+	// still have to be added -- adding the top one again made the result too big.
+	double lineCorr = lineColor() != CommonStrings::None ? m_lineWidth / 2.0 : 0.0;
+	double height = textToFrameDistBottom() + lineCorr;
 	if (textLayout.lines() > 0)
 		height += naturalH;
 
